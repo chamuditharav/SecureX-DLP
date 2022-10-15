@@ -26,7 +26,7 @@ def decrypt(ciphertext, key):
     try:
         return rsa.decrypt(ciphertext, key).decode('ascii')
     except:
-        print("Decryption Error")
+        print("Decryption Error!")
 
 def keyEx():
     publicKey, privateKey = generateKeys()
