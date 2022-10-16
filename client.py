@@ -1,17 +1,16 @@
 import socket
 import time
+import threading
 
 import rsa
 from cryptography.fernet import Fernet
 
-client = "client1"
-HOST = "127.0.0.1"  # The server's hostname or IP address
-PORT = 65432  # The port used by the server
+clientID = "Client1"
+keys = {"priK":"", "pubK":"", "shareKey":""}
 
-keys = {"priK":"", "pubK":"", "key":""}
-
-CLIENT = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-CLIENT.connect((HOST, PORT))
+# Connecting To Server
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client.connect(('127.0.0.1', 65432))
 
 
 def generateKeys(ksize=1024):
@@ -26,22 +25,45 @@ def decrypt(ciphertext, key):
     try:
         return rsa.decrypt(ciphertext, key).decode('ascii')
     except:
-        print("Decryption Error")
+        print("Decryption Error!")
 
 def keyEx():
     publicKey, privateKey = generateKeys()
     keys["priK"] = privateKey
     keys["pubK"] = publicKey
 
+    send(f"NEW-CON:{keys['pubK']._save_pkcs1_pem().hex()}")
+
+def receive():
+    while True:
+        try:
+            DataFrame = client.recv(4096).decode('ascii')
+            if (f"{clientID}:SVR-KEYEX-RPLY" in DataFrame):
+                DataFrame = DataFrame.split(":")
+                #print(DataFrame)
+                keys["shareKey"] = decrypt(bytes.fromhex(DataFrame[2]),keys["priK"])
+                print(keys["shareKey"])
+            else:
+                print(DataFrame)
+        except:
+            print("An error occured!")
+            client.close()
+            break
+
+def send(message):
+    client.send(bytes(f"{clientID}:{message}", 'ascii'))
 
 
-while True:
+def mainLoop():
     keyEx()
-    time.sleep(2)
-    CLIENT.sendall(bytes(f"NEW-CON:{client}:{keys['pubK']._save_pkcs1_pem().hex()}", 'ascii'))
-    time.sleep(20)
+    while True:
+        if(not keys["shareKey"] == ""):
+            send(str(input("> ")))
 
 
 
-#keyEx()
-#print(keys["pubK"]._save_pkcs1_pem().hex())
+receive_thread = threading.Thread(target=receive)
+receive_thread.start()
+
+write_thread = threading.Thread(target=mainLoop)
+write_thread.start()

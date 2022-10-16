@@ -5,51 +5,93 @@ import threading
 import rsa
 from cryptography.fernet import Fernet
 
-HOST = "127.0.0.1"
-PORT = 65432
+host = '127.0.0.1'
+port = 65432
 
+connections = []
 hosts = []
 pubKeys = {}
 keys = {}
 
-SVR = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-SVR.bind((HOST, PORT))
-SVR.listen()
+
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind((host, port))
+server.listen()
 
 
-def keyEx(host):
+
+
+def encrypt(message, key):
+    return rsa.encrypt(message.encode('ascii'), key)
+
+
+def decrypt(ciphertext, key):
+    try:
+        return rsa.decrypt(ciphertext, key).decode('ascii')
+    except:
+        print("Decryption Error!")
+
+
+def keyEx(host,pubKey):
     print(f"Key Ex with {host}")
-    newKey = Fernet.generate_key()
+    
+    if(host in keys.keys()):
+        encKey = keys[host]
+    else:
+        encKey = Fernet.generate_key().decode()
+        keys[host] = encKey
+    
+    #broadcast(encKey)
+    #print(encKey)
 
-def breadcast(dst,msg):
-    SVR.send(f"")
+    publicKey_fromhex = bytes.fromhex(pubKey)
+    publicKey = rsa.PublicKey.load_pkcs1(publicKey_fromhex)
+    pubKeys[host] = publicKey
 
-def conHandler(address,payload):
-    print(f"{address} -> {payload}")
-    # if("NEW-CON" in data):
-    #     data = data.split(":")
-    #pass
+    #print(pubKey)
+    
+    try:
+        #print(f"SVR-KEYEX-RPLY:{host}:{encrypt(encKey,pubKeys[host]).hex()}")
+        broadcast(f"{host}:SVR-KEYEX-RPLY:{encrypt(encKey,pubKeys[host]).hex()}")
+        print(f"Key Sent to {host}")
+    except:
+        print(f"Key Ex with {host} Failed!")
+        broadcast(f"{host}:SVR-KEY-EX-ReINIT")
 
 
+def broadcast(message):
+    for connection in connections:
+        connection.send(bytes(message,'ascii'))
 
-try:
+
+def handle(client):
     while True:
-        conn, addr = SVR.accept()
-        with conn:
-            #print(f"Connected by {addr}")
-            data = conn.recv(4096).decode()
+        try:
+            dataFrame = client.recv(4096).decode()
+            dataFrame = dataFrame.split(":")
+            #print(dataFrame)
+            if("NEW-CON" in dataFrame): #NEW-CON:HOST:PubK
+                    hosts.append(dataFrame[0])
+                    keyEx_thread = threading.Thread(target=keyEx, args=(dataFrame[0],dataFrame[2]))
+                    keyEx_thread.start()
+            elif(dataFrame[0] in hosts):
+                print(dataFrame)
+        except:
+            connections.remove(client)
+            client.close()
+            break
 
-            if("NEW-CON" in data): #NEW-CON:HOST:PubK
-                data = data.split(":")
-                hosts.append(data[1])
-                pubKeys[data[1]] = data[2]
 
-                print(f"{data[1]} => {data[2]}")
+def receive():
+    while True:
+        con, address = server.accept()
+        print("Connected with {}".format(str(address)))
+
+        connections.append(con)
+
+        thread = threading.Thread(target=handle, args=(con,))
+        thread.start()
 
 
-            else:
-                thread = threading.Thread(target=conHandler, args=(addr,data))
-                thread.start()
 
-except:
-    print("Server Stopped!")
+receive()
