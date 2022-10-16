@@ -105,6 +105,7 @@ def mainLoop():
             terminal = str(input("> "))
             sendEnc(terminal)
             print(f"{clientID} --> SVR : {terminal}")
+            time.sleep(2)
             
 
 
