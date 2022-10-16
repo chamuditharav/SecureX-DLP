@@ -5,6 +5,8 @@ import threading
 import rsa
 from cryptography.fernet import Fernet
 
+print("Initializing the server........")
+
 host = '127.0.0.1'
 port = 65432
 
@@ -12,11 +14,26 @@ connections = []
 hosts = []
 pubKeys = {}
 keys = {}
+keyFernets = {}
 
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind((host, port))
 server.listen()
+
+
+def MSGencrypt(host,data):
+    fernet = keyFernets[host]
+    enc = fernet.encrypt(data.encode())
+    #print(enc)
+    return(enc)
+    
+
+
+def MSGdecrypt(host,data):
+    fernet = keyFernets[host]
+    dec = fernet.decrypt(bytes.fromhex(data))
+    return(dec.decode())
 
 
 
@@ -40,6 +57,7 @@ def keyEx(host,pubKey):
     else:
         encKey = Fernet.generate_key().decode()
         keys[host] = encKey
+        keyFernets[host] = Fernet(encKey)
     
     #broadcast(encKey)
     #print(encKey)
@@ -63,19 +81,31 @@ def broadcast(message):
     for connection in connections:
         connection.send(bytes(message,'ascii'))
 
+def sendEnc(host,message):
+    broadcast(f"{host}:ENC-MSG:{MSGencrypt(host,message).hex()}")
 
 def handle(client):
+    
     while True:
         try:
             dataFrame = client.recv(4096).decode()
             dataFrame = dataFrame.split(":")
             #print(dataFrame)
-            if("NEW-CON" in dataFrame): #NEW-CON:HOST:PubK
+            if("NEW-CON" in dataFrame): #HOST:NEW-CON:PubK
                     hosts.append(dataFrame[0])
                     keyEx_thread = threading.Thread(target=keyEx, args=(dataFrame[0],dataFrame[2]))
                     keyEx_thread.start()
-            elif(dataFrame[0] in hosts):
-                print(dataFrame)
+            elif("ENC-MSG" in dataFrame[1] and dataFrame[0] in hosts):
+                print(f"SVR <-- {dataFrame[0]} {MSGdecrypt(dataFrame[0],dataFrame[2])}")
+                time.sleep(1)
+                sendEnc(dataFrame[0],"ENC MSG Rec ACK")
+                print(f"SVR --> {dataFrame[0]} ENC MSG Rec ACK")
+                print("\n")
+
+
+            # elif(dataFrame[0] in hosts):
+            #     print("TEST")
+
         except:
             connections.remove(client)
             client.close()
@@ -83,14 +113,20 @@ def handle(client):
 
 
 def receive():
+    print("Server up and running..........")
     while True:
         con, address = server.accept()
         print("Connected with {}".format(str(address)))
 
         connections.append(con)
+        #broadcast("SVR-INIT")
 
         thread = threading.Thread(target=handle, args=(con,))
         thread.start()
+    else:
+        print("Server stopped......")
+
+        
 
 
 
